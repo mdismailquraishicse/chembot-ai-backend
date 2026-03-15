@@ -21,7 +21,7 @@ Purpose:
     "exit quiz", and terminate the application using "exit".
 """
 
-from chembot_ai import ChatBotAI, ChatBotQuizAI
+from src.chembot_ai import ChatBotAI, ChatBotQuizAI
 
 bot = ChatBotAI()
 quiz_bot = ChatBotQuizAI()
