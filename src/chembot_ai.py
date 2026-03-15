@@ -6,8 +6,12 @@ Purpose:
     This module handles chemistry question answering, quiz generation, and
     answer grading using a local LLM via LangChain and Ollama.
 """
+import os
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
+
+host = os.getenv("OLLAMA_HOST")
+model = os.getenv("OLLAMA_MODEL")
 
 class ChatBotAI:
     """
@@ -42,8 +46,9 @@ class ChatBotAI:
 
         self.chat_history = []
         self.llm  = ChatOllama(
-            model = "phi3:latest",
-            temperature = 0.0
+            model = model,
+            temperature = 0.0,
+            host=host
         )
 
 
@@ -136,8 +141,9 @@ class ChatBotQuizAI:
         self.quiz_mode = False
         self.current_answer = None
         self.llm  = ChatOllama(
-            model = "phi3:latest",
-            temperature = 0.8
+            model = model,
+            temperature = 0.5,
+            host=host
         )
 
 
