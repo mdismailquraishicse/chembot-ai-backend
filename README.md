@@ -70,7 +70,7 @@ docker build -t chembot .
 ### 2. Run the container
 
 ```bash
-docker run -it --network="host" --env-file .env chembot
+docker run -it   --network="host"   --env-file .env   -v ~/.cache/huggingface:/root/.cache/huggingface   -v $(pwd)/faiss_index:/app/faiss_index   chembot
 ```
 
 ## Normal Chat Mode
