@@ -125,11 +125,14 @@ class ChatBotAI:
 
         Rules:
         - Only answer chemistry-related questions.
-        - Use the provided context to answer.
-        - If context is not relevant, answer from your knowledge.
-        - If not chemistry-related, respond:
-        "I can only answer chemistry-related questions."
-        """),
+        - Use ONLY the provided context to answer.
+        - Do NOT use your own knowledge.
+        - Do NOT guess or infer beyond the context.
+        - If the answer is not present in the context, respond:
+        Answer not found in the provided context.
+        - If the question is not chemistry-related, respond:
+        I can only answer chemistry-related questions.
+            """),
 
             MessagesPlaceholder(variable_name="chat_history"),
 
@@ -215,11 +218,33 @@ class ChatBotQuizAI:
 
         self.quiz_mode = False
         self.current_answer = None
-        self.llm  = ChatOllama(
-            model = model,
-            temperature = 0.5,
-            host=host
-        )
+        if use_local_model=="1":
+            # Use local model
+            print(f"The program will use local model from ollama: {use_local_model}")
+            self.llm  = ChatOllama(
+                model = model,
+                temperature = 0.4,
+                host=host
+            )
+        else:
+            # Use huggingface model
+            print(f"The program will use model from huggingface: {use_local_model}")
+            llm = HuggingFaceEndpoint(
+            repo_id="meta-llama/Meta-Llama-3-8B-Instruct",
+            task="text-generation",
+            max_new_tokens=512,
+            temperature=0.9,
+            huggingfacehub_api_token=huggingface_key
+            )
+
+            self.llm = ChatHuggingFace(llm=llm)
+
+
+        # self.llm  = ChatOllama(
+        #     model = model,
+        #     temperature = 0.5,
+        #     host=host
+        # )
 
 
         self.quiz_prompt = ChatPromptTemplate.from_template(

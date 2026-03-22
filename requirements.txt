@@ -1,8 +1,15 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
 PyMuPDF==1.27.2.2
 faiss-cpu==1.13.2
+numpy<2
 langchain-ollama==1.0.1
 langchain-core==1.2.19
 langchain-community==0.4.1
 langchain-text-splitters==1.1.1
 langchain-huggingface==1.2.1
-sentence-transformers==5.3.0
+
+sentence-transformers==2.6.1
+fastapi==0.135.1
+uvicorn==0.42.0
+
+torch==2.2.2+cpu
