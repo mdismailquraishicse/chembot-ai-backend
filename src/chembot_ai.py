@@ -11,9 +11,59 @@ from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_community.document_loaders import PyMuPDFLoader
+from langchain_text_splitters import CharacterTextSplitter
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
+from langchain_community.vectorstores import FAISS
 
 host = os.getenv("OLLAMA_HOST")
 model = os.getenv("OLLAMA_MODEL")
+huggingface_key = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+use_local_model = os.getenv("USE_LOCAL_MODEL", "1")
+pdf_path = ""
+class ChemDB:
+    def __init__(self):
+        self.embeddings = HuggingFaceEmbeddings(
+            model_name="all-MiniLM-L6-v2"
+        )
+
+    def load_pdf_from_directory(self, pdf_path):
+        loader = PyMuPDFLoader(pdf_path)
+        doc = loader.load()
+        return doc
+    
+    def get_chunks(self, documents, chunk_size=500, chunk_overlap=50):
+        text_splitter = CharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap
+        )
+        chunks = text_splitter.split_documents(documents)
+        print(f"Total chunks created: {len(chunks)}")
+        return chunks
+    
+    def save_faiss(self, chunks,
+                   index = "faiss_index"):
+        db = FAISS.from_documents(chunks, self.embeddings)
+        db.save_local(index)
+        return True
+    
+    def load_faiss(self, index = "faiss_index"):
+        db = FAISS.load_local(index, self.embeddings, allow_dangerous_deserialization=True)
+        return db
+    
+    def get_faiss(self, path,index_path="faiss_index"):
+        if os.path.exists(f"{index_path}/index.faiss"):
+            print("✅ Loading existing FAISS index...")
+            db = self.load_faiss(index=index_path)
+        else:
+            print("🚀 Creating new FAISS index...")
+            document = self.load_pdf_from_directory(pdf_path=path)
+            chunks = self.get_chunks(documents=document)
+            self.save_faiss(index=index_path, chunks=chunks)
+            db = self.load_faiss(index=index_path)
+        return db
+    
 
 class ChatBotAI:
     """
@@ -47,11 +97,26 @@ class ChatBotAI:
         """
 
         self.chat_history = []
-        self.llm  = ChatOllama(
-            model = model,
-            temperature = 0.0,
-            host=host
-        )
+        if use_local_model=="1":
+            # Use local model
+            print(f"The program will use local model from ollama: {use_local_model}")
+            self.llm  = ChatOllama(
+                model = model,
+                temperature = 0.0,
+                host=host
+            )
+        else:
+            # Use huggingface model
+            print(f"The program will use model from huggingface: {use_local_model}")
+            llm = HuggingFaceEndpoint(
+            repo_id="meta-llama/Meta-Llama-3-8B-Instruct",
+            task="text-generation",
+            max_new_tokens=512,
+            temperature=0.2,
+            huggingfacehub_api_token=huggingface_key
+            )
+
+            self.llm = ChatHuggingFace(llm=llm)
 
         self.prompt = ChatPromptTemplate.from_messages([
             ("system",
@@ -60,18 +125,27 @@ class ChatBotAI:
 
         Rules:
         - Only answer chemistry-related questions.
-        - If the question is not about chemistry respond:
+        - Use the provided context to answer.
+        - If context is not relevant, answer from your knowledge.
+        - If not chemistry-related, respond:
         "I can only answer chemistry-related questions."
         """),
 
             MessagesPlaceholder(variable_name="chat_history"),
 
-            ("human", "{question}")
+            ("human",
+            """
+        Context:
+        {context}
+
+        Question:
+        {question}
+        """)
         ])
 
         self.chain = self.prompt | self.llm
 
-    def ask(self, question:str):
+    def ask(self, question:str, context: str):
         """
         Process a user question and generate a chemistry-focused response.
 
@@ -92,7 +166,8 @@ class ChatBotAI:
 
         response = self.chain.invoke({
             "chat_history": self.chat_history,
-            "question": question
+            "question": question,
+            "context": context
         })
         answer = response.content
         self.chat_history.append(HumanMessage(content=question))

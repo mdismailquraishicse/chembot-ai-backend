@@ -21,10 +21,15 @@ Purpose:
     "exit quiz", and terminate the application using "exit".
 """
 
-from src.chembot_ai import ChatBotAI, ChatBotQuizAI
+from src.chembot_ai import ChatBotAI, ChatBotQuizAI, ChemDB
 
 bot = ChatBotAI()
 quiz_bot = ChatBotQuizAI()
+chem_db = ChemDB()
+path = "src/chemistry-lr.pdf"
+
+index_path = "faiss_index"
+db = chem_db.get_faiss(path= path)
 
 while True:
     question = input("You: ")
@@ -35,7 +40,17 @@ while True:
         answer = quiz_bot.ask(question)
     # Normal mode
     else:
-        answer = bot.ask(question)
+      docs = db.similarity_search_with_score(question.strip(), k=5)
+   #    filtered_docs = [
+   #       doc for doc, score in docs if score < 0.8
+   #    ]
+   #    if not filtered_docs:
+   #       context = ""
+   #    else:
+   #       context = "\n\n".join([doc.page_content for doc in filtered_docs])
+      context = "\n\n".join([content.page_content for content in db.similarity_search(question.strip(), k=2)])
+      print(f"context: {context}")
+      answer = bot.ask(question, context=context)
 
     print("\nChemBot:", answer)
     print()
