@@ -23,6 +23,7 @@ Purpose:
 
 from uuid import uuid4
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from src.chembot_ai import ChatBotAI, ChatBotQuizAI, ChemDB
 
@@ -33,6 +34,14 @@ path = "data/chemistry-lr.pdf"
 
 index_path = "faiss_index"
 db = chem_db.get_faiss(path= path)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # or your frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Request schema
 class QueryRequest(BaseModel):
