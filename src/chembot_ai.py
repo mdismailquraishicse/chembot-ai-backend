@@ -7,8 +7,9 @@ Purpose:
     answer grading using a local LLM via LangChain and Ollama.
 """
 import os
+import random
+from dotenv import load_dotenv
 from langchain_ollama import ChatOllama
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_community.document_loaders import PyMuPDFLoader
@@ -16,12 +17,53 @@ from langchain_text_splitters import CharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
 from langchain_community.vectorstores import FAISS
+from src import model, use_local_model, huggingface_key, host
 
-host = os.getenv("OLLAMA_HOST")
-model = os.getenv("OLLAMA_MODEL")
-huggingface_key = os.getenv("HUGGINGFACEHUB_API_TOKEN")
-use_local_model = os.getenv("USE_LOCAL_MODEL", "1")
+load_dotenv()
+
+
 pdf_path = ""
+
+prompt_base = ChatPromptTemplate.from_messages([
+            ("system",
+            """
+        You are ChemBot, an AI chemistry teacher.
+
+        Rules:
+        - Only answer chemistry-related questions.
+        - Use the provided context to answer.
+        - If context is not relevant, answer from your knowledge.
+        - If not chemistry-related, respond:
+        "I can only answer chemistry-related questions."
+        """),
+
+            MessagesPlaceholder(variable_name="chat_history"),
+
+            ("human",
+            """
+        Context:
+        {context}
+
+        Question:
+        {question}
+        """)
+        ])
+
+prompt_quiz = ChatPromptTemplate.from_template(
+            """
+                You are a chemistry teacher.
+
+                Generate ONE short chemistry quiz question.
+                Return ONLY in this format:
+
+                QUESTION: <question>
+                ANSWER: <correct answer>
+                OPTION_A: <incorrect answer>
+                OPTION_B: <incorrect answer>
+                OPTION_C: <incorrect answer>
+            """
+        )
+
 class ChemDB:
     def __init__(self):
         self.embeddings = HuggingFaceEmbeddings(
@@ -33,7 +75,7 @@ class ChemDB:
         doc = loader.load()
         return doc
     
-    def get_chunks(self, documents, chunk_size=500, chunk_overlap=50):
+    def get_chunks(self, documents, chunk_size=1000, chunk_overlap=100):
         text_splitter = CharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap
@@ -53,6 +95,7 @@ class ChemDB:
         return db
     
     def get_faiss(self, path,index_path="faiss_index"):
+        print(f"loading faiss db...")
         if os.path.exists(f"{index_path}/index.faiss"):
             print("✅ Loading existing FAISS index...")
             db = self.load_faiss(index=index_path)
@@ -80,7 +123,7 @@ class ChatBotAI:
         - Generate responses using the LLM
         - Restrict responses to chemistry-related topics
     """
-    def __init__(self):
+    def __init__(self, flag_quiz=False):
         """
         Initialize the ChatBotAI instance.
 
@@ -97,51 +140,34 @@ class ChatBotAI:
         """
 
         self.chat_history = []
+        self.filename:str = None
+        self.flag_quiz = flag_quiz
         if use_local_model=="1":
             # Use local model
             print(f"The program will use local model from ollama: {use_local_model}")
             self.llm  = ChatOllama(
                 model = model,
-                temperature = 0.0,
+                temperature = 0,
                 host=host
             )
+
         else:
             # Use huggingface model
             print(f"The program will use model from huggingface: {use_local_model}")
             llm = HuggingFaceEndpoint(
             repo_id="meta-llama/Meta-Llama-3-8B-Instruct",
             task="text-generation",
-            max_new_tokens=512,
-            temperature=0.2,
+            max_new_tokens=1024,
+            temperature=0.8,
             huggingfacehub_api_token=huggingface_key
             )
 
             self.llm = ChatHuggingFace(llm=llm)
 
-        self.prompt = ChatPromptTemplate.from_messages([
-            ("system",
-            """
-        You are ChemBot, an AI chemistry teacher.
-
-        Rules:
-        - Only answer chemistry-related questions.
-        - Use the provided context to answer.
-        - If context is not relevant, answer from your knowledge.
-        - If not chemistry-related, respond:
-        "I can only answer chemistry-related questions."
-        """),
-
-            MessagesPlaceholder(variable_name="chat_history"),
-
-            ("human",
-            """
-        Context:
-        {context}
-
-        Question:
-        {question}
-        """)
-        ])
+        if flag_quiz:
+            self.prompt = prompt_quiz
+        else:
+            self.prompt = prompt_base
 
         self.chain = self.prompt | self.llm
 
@@ -174,7 +200,7 @@ class ChatBotAI:
         self.chat_history.append(AIMessage(content=answer))
         return answer
     
-class ChatBotQuizAI:
+class ChatBotQuizAI(ChatBotAI):
     """
     Quiz engine for ChemBot that manages chemistry quiz interactions.
 
@@ -193,7 +219,7 @@ class ChatBotQuizAI:
         - Manage quiz session state
     """
 
-    def __init__(self):
+    def __init__(self, flag_quiz=True):
         """
         Initialize the quiz engine for ChemBot.
 
@@ -207,34 +233,16 @@ class ChatBotQuizAI:
             - quiz_mode: Tracks whether the quiz session is active.
             - current_answer: Stores the correct answer for the current quiz question.
             - llm: Loads the local language model used for quiz generation and grading.
-            - quiz_prompt: Prompt template used to generate chemistry quiz questions.
+            - prompt: Prompt template used to generate chemistry quiz questions.
             - quiz_chain: LangChain pipeline that generates quiz questions.
             - grading_prompt: Prompt template used to evaluate student answers.
             - grading_chain: LangChain pipeline that grades student responses.
         """
 
+        super().__init__(flag_quiz=flag_quiz)
         self.quiz_mode = False
         self.current_answer = None
-        self.llm  = ChatOllama(
-            model = model,
-            temperature = 0.5,
-            host=host
-        )
-
-
-        self.quiz_prompt = ChatPromptTemplate.from_template(
-            """
-                You are a chemistry teacher.
-
-                Generate ONE short chemistry quiz question.
-                Return ONLY in this format:
-
-                QUESTION: <question>
-                ANSWER: <correct answer>
-            """
-        )
-
-        self.quiz_chain = self.quiz_prompt | self.llm
+        self.quiz_chain = self.prompt | self.llm
         self.grading_prompt = ChatPromptTemplate.from_template(
             """
             You are a chemistry teacher grading a student's answer.
@@ -281,12 +289,26 @@ class ChatBotQuizAI:
         lines = [l.strip() for l in result.split("\n") if l.strip()]
         question = None
         answer = None
+
         for line in lines:
             if line.startswith("QUESTION:"):
                 question = line.replace("QUESTION:", "").strip()
             elif line.startswith("ANSWER:"):
                 answer = line.replace("ANSWER:", "").strip()
+            elif line.startswith("OPTION_A:"):
+                opt_a = line.replace("OPTION_A:", "").strip()
+            elif line.startswith("OPTION_B:"):
+                opt_b = line.replace("OPTION_B:", "").strip()
+            elif line.startswith("OPTION_C:"):
+                opt_c = line.replace("OPTION_C:", "").strip()
         self.current_answer = answer
+        option_keys = ["a", "b", "c", "d"]
+        all_options = [opt_a, opt_b, opt_c, answer]
+        all_options = list(set(all_options))
+        print(f"before shuffle all options: {all_options}")
+        random.shuffle(all_options)
+        print(f"all options: {all_options}")
+        self.options = {key:val for key, val in zip(option_keys, all_options)}
         return question
 
     def ask(self, question: str):
@@ -315,23 +337,11 @@ class ChatBotQuizAI:
                 quiz question or system message.
         """
 
-        if question.lower() == "quiz":
-            self.quiz_mode = True
-            q = self.generate_quiz()
-            return f"Quiz Mode Started!\n\n{q}"
-        if question.lower() == "exit quiz":
-            self.quiz_mode = False
-            return "Quiz mode ended."
-        if self.quiz_mode:
-            grade = self.grade_answer(question)
-            if grade.lower() == "correct":
-                result = f"Correct! 🎉\n Answer:{self.current_answer}"
-            else:
-                result = f"Incorrect. Correct answer: {self.current_answer}"
-
-            new_question = self.generate_quiz()
-
-            return f"{result}\n\nNext Question:\n{new_question}"
+        q = self.generate_quiz()
+        print(f"generated quiz q: {q}")
+        print(f"answer: {self.current_answer}")
+        print(f"options: {self.options}")
+        return q, self.options, self.current_answer
         
     def grade_answer(self, student_answer: str):
         """
