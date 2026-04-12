@@ -11,3 +11,7 @@ accelerate
 fastapi==0.135.2
 uvicorn[standard]
 python-multipart==0.0.22
+
+######### Login #########
+PyJWT==2.12.1
+bcrypt==5.0.0

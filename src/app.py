@@ -25,14 +25,17 @@ import os
 import shutil
 import asyncio
 from pydantic import BaseModel
-from fastapi import File, UploadFile
+from fastapi import File, UploadFile, Request
 from src.chembot_ai import  ChemDB
 from src import app, use_local_model
+from src.auth.models import User
+from src.auth.utils import verify_password, generate_token, encrypt_password, token_validation
 
 class Query(BaseModel):
    question:str
 
 chem_db = ChemDB()
+user_db = {}
 
 if use_local_model == "1":
    from src.chembot_ai_with_transformers import ChatBotAI, ChatBotQuizAI
@@ -47,16 +50,49 @@ else:
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+@app.post("/register")
+def register(user:User):
+   """
+   1. generate hashed password
+   2. store creds in db
+   """
+   password = user.password
+   password_hash = encrypt_password(password=password)
+   user.password = password_hash
+   user_db[user.email] = user.model_dump()
+   print(f"registered user: {user_db}")
+   return True
+
+@app.post("/login")
+def login(user:User):
+   """
+      1. Fetch hashed password from db for the given username
+      2. compare hashed and plain password using bcrypt
+   """
+   # fetch plain password from db
+   print(f"user:{user}")
+   print(f"user db : {user_db}")
+   hash_pw = user_db.get(user.email).get("password")
+   print(f"user: {user}")
+   if not verify_password(hash_pw=hash_pw ,password=user.password):
+      print(f"Invalid credentials")
+      return
+   token = generate_token(payload=user.model_dump())
+   return token
+
+
 @app.get("/")
+@token_validation
 def home():
    return {
       "message":"chembot is running..."
    }
 
 @app.post("/upload-pdf")
-def upload_pdf(file:UploadFile=File(...)):
+# @token_validation
+async def upload_pdf(file:UploadFile=File(...)):
    if file.content_type != "application/pdf":
-      return {"error":"only pdf files are allowed"}
+      return {"error": "only pdf files are allowed"}
    file_path = os.path.join(UPLOAD_DIR, file.filename)
    with open(file_path, "wb") as buffer:
       shutil.copyfileobj(file.file, buffer)
@@ -72,7 +108,8 @@ def upload_pdf(file:UploadFile=File(...)):
    }
 
 @app.post("/ask")
-async def ask(query: Query):
+# @token_validation
+async def ask(query: Query, request:Request):
    print(f"ask is called")
    file_path = os.path.join(UPLOAD_DIR, bot.filename)
    db = chem_db.get_faiss(path=file_path)
@@ -94,13 +131,10 @@ async def ask(query: Query):
       "answer":answer
    }
 
-# @app.post("/ask")
-# async def ask(query: dict):
-#     print("🔥 ASK HIT RAW:", query)
-#     return {"answer": "working"}
 
 @app.post("/quiz")
-async def quiz(query: Query):
+@token_validation
+async def quiz(query: Query, request:Request):
    quiz_que, options, quiz_answer = await asyncio.to_thread(
       quiz_bot.ask,
       question = query.question)
@@ -114,7 +148,8 @@ async def quiz(query: Query):
            }
 
 @app.get("/quiz/{answer}")
-def quiz_answer(answer:int):
+@token_validation
+def quiz_answer(answer:int, request:Request):
    if answer==1:
       print("the answer is correct")
       return {"result": "Correct"}
