@@ -1,5 +1,7 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
 PyMuPDF==1.27.2.2
 faiss-cpu==1.13.2
+numpy<2
 langchain-ollama==1.0.1
 langchain-core==1.2.19
 langchain-community==0.4.1
