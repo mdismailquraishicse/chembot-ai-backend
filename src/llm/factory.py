@@ -1,4 +1,4 @@
-from llm.providers.huggingface_provider import HuggingFaceProvider
+from src.llm.providers.huggingface_provider import HuggingFaceProvider
 
 
 

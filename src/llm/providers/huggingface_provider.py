@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from llm.providers.base import BaseLLMProvider
+from src.llm.providers.base import BaseLLMProvider
 from langchain_huggingface import HuggingFaceEndpoint, ChatHuggingFace
 
 
