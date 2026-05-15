@@ -1,26 +1,27 @@
-# """
-# Author: Md Ismail Quraishi
-# Date: 14/03/2026
+"""
+Author: Md Ismail Quraishi
+Date: 14/03/2026
 
-# Purpose:
-#     This module serves as the main entry point for running the ChemBot
-#     command-line application.
+Purpose:
+    This module serves as the main entry point for running the ChemBot
+    command-line application.
 
-#     It initializes the chatbot components and manages user interaction
-#     through a terminal interface. The application supports two modes:
+    It initializes the chatbot components and manages user interaction
+    through a terminal interface. The application supports two modes:
 
-#     1. Normal Chat Mode
-#        - Handled by ChatBotAI
-#        - Answers chemistry-related questions.
+    1. Normal Chat Mode
+       - Handled by ChatBotAI
+       - Answers chemistry-related questions.
 
-#     2. Quiz Mode
-#        - Handled by ChatBotQuizAI
-#        - Generates chemistry quiz questions and evaluates user answers.
+    2. Quiz Mode
+       - Handled by ChatBotQuizAI
+       - Generates chemistry quiz questions and evaluates user answers.
 
-#     Users can start quiz mode by typing "quiz", exit quiz mode with
-#     "exit quiz", and terminate the application using "exit".
-# """
+    Users can start quiz mode by typing "quiz", exit quiz mode with
+    "exit quiz", and terminate the application using "exit".
+"""
 
+import os
 from src import app
 from fastapi import Request
 from pydantic import BaseModel
@@ -32,8 +33,9 @@ from src.auth.utils import verify_password, generate_token, encrypt_password, to
 class Query(BaseModel):
    question:str
 
-chembot = ChatBotAI(provider="hf")
-quiz_bot = ChatBotQuizAI(provider="hf")
+provider = os.getenv("PROVIDER", "hf")
+chembot = ChatBotAI(provider = provider)
+quiz_bot = ChatBotQuizAI(provider = provider)
 user_db = {}
 
 
@@ -69,7 +71,6 @@ def login(user:User):
 
 
 @app.get("/")
-@token_validation
 def home():
    return {
       "message":"chembot is running..."
@@ -99,6 +100,7 @@ async def quiz(request:Request):
            "answer": quiz_answer,
            "options":options
            }
+
 
 @app.get("/quiz/{answer}")
 @token_validation
