@@ -1,206 +1,72 @@
 """
 Author: Md Ismail Quraishi
-Date: 14/03/2026
+Date: 15/05/2026
 Purpose:
     To implement the core AI logic for ChemBot, a chemistry-focused chatbot.
     This module handles chemistry question answering, quiz generation, and
     answer grading using a local LLM via LangChain and Ollama.
 """
+
 import os
 import random
 from dotenv import load_dotenv
-from langchain_ollama import ChatOllama
+from src.db.chembot_ai import ChemDB
+from src.llm.factory import LLMFactory
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_community.document_loaders import PyMuPDFLoader
-from langchain_text_splitters import CharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
-from langchain_community.vectorstores import FAISS
-from src import model, use_local_model, huggingface_key, host
 
+
+chem_db = ChemDB()
 load_dotenv()
 
+# prompt_quiz = ChatPromptTemplate.from_template(
+#             """
+#                 You are a chemistry teacher.
 
-pdf_path = ""
+#                 Generate ONE short chemistry quiz question.
+#                 Return ONLY in this format:
 
-prompt_base = ChatPromptTemplate.from_messages([
-            ("system",
-            """
-        You are ChemBot, an AI chemistry teacher.
+#                 QUESTION: <question>
+#                 ANSWER: <correct answer>
+#                 OPTION_A: <incorrect answer>
+#                 OPTION_B: <incorrect answer>
+#                 OPTION_C: <incorrect answer>
+#             """
+#         )
 
+prompt_quiz = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        """
+        You are a chemistry teacher.
+        Generate EXACTLY ONE chemistry quiz question.
+        
         Rules:
-        - Only answer chemistry-related questions.
-        - Use the provided context to answer.
-        - If context is not relevant, answer from your knowledge.
-        - If not chemistry-related, respond:
-        "I can only answer chemistry-related questions."
-        """),
-
-            MessagesPlaceholder(variable_name="chat_history"),
-
-            ("human",
-            """
-        Context:
-        {context}
-
-        Question:
-        {question}
-        """)
-        ])
-
-prompt_quiz = ChatPromptTemplate.from_template(
-            """
-                You are a chemistry teacher.
-
-                Generate ONE short chemistry quiz question.
-                Return ONLY in this format:
-
-                QUESTION: <question>
-                ANSWER: <correct answer>
-                OPTION_A: <incorrect answer>
-                OPTION_B: <incorrect answer>
-                OPTION_C: <incorrect answer>
-            """
-        )
-
-class ChemDB:
-    def __init__(self):
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name="all-MiniLM-L6-v2"
-        )
-
-    def load_pdf_from_directory(self, pdf_path):
-        loader = PyMuPDFLoader(pdf_path)
-        doc = loader.load()
-        return doc
-    
-    def get_chunks(self, documents, chunk_size=1000, chunk_overlap=100):
-        text_splitter = CharacterTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap
-        )
-        chunks = text_splitter.split_documents(documents)
-        print(f"Total chunks created: {len(chunks)}")
-        return chunks
-    
-    def save_faiss(self, chunks,
-                   index = "faiss_index"):
-        db = FAISS.from_documents(chunks, self.embeddings)
-        db.save_local(index)
-        return True
-    
-    def load_faiss(self, index = "faiss_index"):
-        db = FAISS.load_local(index, self.embeddings, allow_dangerous_deserialization=True)
-        return db
-    
-    def get_faiss(self, path,index_path="faiss_index"):
-        print(f"loading faiss db...")
-        if os.path.exists(f"{index_path}/index.faiss"):
-            print("✅ Loading existing FAISS index...")
-            db = self.load_faiss(index=index_path)
-        else:
-            print("🚀 Creating new FAISS index...")
-            document = self.load_pdf_from_directory(pdf_path=path)
-            chunks = self.get_chunks(documents=document)
-            self.save_faiss(index=index_path, chunks=chunks)
-            db = self.load_faiss(index=index_path)
-        return db
-    
-
-class ChatBotAI:
-    """
-    ChatBotAI handles the core conversational functionality of ChemBot.
-
-    This class uses a local language model through LangChain and Ollama
-    to answer user questions related to chemistry. It maintains a short
-    conversation history to provide contextual responses while enforcing
-    rules that restrict the chatbot to chemistry-related topics only.
-
-    Responsibilities:
-        - Process user chemistry questions
-        - Maintain limited chat history for context
-        - Generate responses using the LLM
-        - Restrict responses to chemistry-related topics
-    """
-    def __init__(self, flag_quiz=False):
+        - Question should be short.
+        - Provide 1 correct answer and 3 incorrect options.
+        - Do not repeat previous questions from chat history.
+        - Keep difficulty medium.
+        - Return ONLY in this format:
+        
+        QUESTION: <question>
+        ANSWER: <correct answer>
+        OPTION_A: <incorrect answer>
+        OPTION_B: <incorrect answer>
+        OPTION_C: <incorrect answer>
         """
-        Initialize the ChatBotAI instance.
+    ),
 
-        This constructor sets up the core components required for the
-        ChemBot conversational system, including:
+    MessagesPlaceholder(variable_name="chat_history"),
 
-        - Initializing chat history storage to maintain recent conversation context.
-        - Loading the local language model via Ollama.
-        - Creating the prompt template that defines the chatbot's role,
-        rules, and response behavior.
+    (
+        "human",
+        "Generate a new chemistry quiz question."
+    )
+])
 
-        The prompt enforces that the chatbot only answers chemistry-related
-        questions and rejects non-chemistry queries.
-        """
-
-        self.chat_history = []
-        self.filename:str = None
-        self.flag_quiz = flag_quiz
-        if use_local_model=="1":
-            # Use local model
-            print(f"The program will use local model from ollama: {use_local_model}")
-            self.llm  = ChatOllama(
-                model = model,
-                temperature = 0,
-                host=host
-            )
-
-        else:
-            # Use huggingface model
-            print(f"The program will use model from huggingface: {use_local_model}")
-            llm = HuggingFaceEndpoint(
-            repo_id="meta-llama/Meta-Llama-3-8B-Instruct",
-            task="text-generation",
-            max_new_tokens=1024,
-            temperature=0.8,
-            huggingfacehub_api_token=huggingface_key
-            )
-
-            self.llm = ChatHuggingFace(llm=llm)
-
-        if flag_quiz:
-            self.prompt = prompt_quiz
-        else:
-            self.prompt = prompt_base
-
-        self.chain = self.prompt | self.llm
-
-    def ask(self, question:str, context: str):
-        """
-        Process a user question and generate a chemistry-focused response.
-
-        This method sends the user's question along with recent conversation
-        history to the language model. The model generates a response based
-        on the defined prompt rules, ensuring answers remain related to
-        chemistry topics.
-
-        The conversation history is updated after each interaction so that
-        future responses can use recent context.
-
-        Args:
-            question (str): The user's input question.
-
-        Returns:
-            str: The response generated by ChemBot.
-        """
-
-        response = self.chain.invoke({
-            "chat_history": self.chat_history,
-            "question": question,
-            "context": context
-        })
-        answer = response.content
-        self.chat_history.append(HumanMessage(content=question))
-        self.chat_history.append(AIMessage(content=answer))
-        return answer
     
-class ChatBotQuizAI(ChatBotAI):
+class ChatBotQuizAI:
+
     """
     Quiz engine for ChemBot that manages chemistry quiz interactions.
 
@@ -219,7 +85,8 @@ class ChatBotQuizAI(ChatBotAI):
         - Manage quiz session state
     """
 
-    def __init__(self, flag_quiz=True):
+    def __init__(self, provider):
+
         """
         Initialize the quiz engine for ChemBot.
 
@@ -239,10 +106,12 @@ class ChatBotQuizAI(ChatBotAI):
             - grading_chain: LangChain pipeline that grades student responses.
         """
 
-        super().__init__(flag_quiz=flag_quiz)
-        self.quiz_mode = False
+        self.chat_history = []
         self.current_answer = None
-        self.quiz_chain = self.prompt | self.llm
+        self.llm = LLMFactory.create(provider=provider)
+        self.prompt = prompt_quiz
+        self.chain = self.prompt | self.llm
+
         self.grading_prompt = ChatPromptTemplate.from_template(
             """
             You are a chemistry teacher grading a student's answer.
@@ -269,6 +138,7 @@ class ChatBotQuizAI(ChatBotAI):
         self.grading_chain = self.grading_prompt | self.llm
 
     def generate_quiz(self):
+
         """
         Generate a new chemistry quiz question using the language model.
 
@@ -285,7 +155,10 @@ class ChatBotQuizAI(ChatBotAI):
             str: The generated chemistry quiz question.
         """
 
-        result = self.quiz_chain.invoke({}).content
+        result = self.chain.invoke({
+            "chat_history": self.chat_history
+        }).content
+        self.chat_history.append(result)
         lines = [l.strip() for l in result.split("\n") if l.strip()]
         question = None
         answer = None
@@ -311,7 +184,8 @@ class ChatBotQuizAI(ChatBotAI):
         self.options = {key:val for key, val in zip(option_keys, all_options)}
         return question
 
-    def ask(self, question: str):
+    def invoke(self):
+
         """
         Handle user input during a quiz session.
 
@@ -344,6 +218,7 @@ class ChatBotQuizAI(ChatBotAI):
         return q, self.options, self.current_answer
         
     def grade_answer(self, student_answer: str):
+
         """
         Evaluate a student's quiz answer using the grading LLM chain.
 
@@ -364,3 +239,4 @@ class ChatBotQuizAI(ChatBotAI):
             "student_answer": student_answer
         }).content.strip()
         return result
+
