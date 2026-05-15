@@ -209,5 +209,6 @@ __marimo__/
 
 
 faiss_index/
+hf_cache/
 *.pdf
 *.pkl
