@@ -4,23 +4,26 @@ services:
   chembot:
     build: .
     container_name: chembot_app
-    # volumes:
-      # - ./models:/app/models
-      # - ./faiss_index:/app/faiss_index
-      # - ./hf_cache:/root/.cache/huggingface   # ✅ ADD THIS
+    volumes:
+      - ./models:/app/models
+      - ./faiss_index:/app/faiss_index
+      - ./hf_cache:/root/.cache/huggingface   # ✅ ADD THIS
     environment:
-      - model_id_local=/app/models/my_local_model
+      # - model_id_local=/app/models/my_local_model
       # - TRANSFORMERS_CACHE=/root/.cache/huggingface  # ✅ ADD THIS
-      - USE_LOCAL_MODEL="${USE_LOCAL_MODEL}"
+      # - USE_LOCAL_MODEL="${USE_LOCAL_MODEL}"
       - HUGGINGFACEHUB_API_TOKEN=${HUGGINGFACEHUB_API_TOKEN}
+      - HF_REPO_ID=${HF_REPO_ID}
+      - PATH_INDEX=${PATH_INDEX}
+      - PATH_PDF=${PATH_PDF}
     ports:
       - "8000:8000"
     restart: unless-stopped
-  db:
-    image: pgvector/pgvector:pg16
-    environment:
-      POSTGRES_DB: mydb
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-    ports:
-      - "5432:5432"
+  # db:
+  #   image: pgvector/pgvector:pg16
+  #   environment:
+  #     POSTGRES_DB: mydb
+  #     POSTGRES_USER: user
+  #     POSTGRES_PASSWORD: password
+  #   ports:
+  #     - "5432:5432"
