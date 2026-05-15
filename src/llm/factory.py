@@ -1,3 +1,5 @@
+from src.llm.providers.local_provider import LocalProvider
+from src.llm.providers.openai_provider import OpenAIProvider
 from src.llm.providers.huggingface_provider import HuggingFaceProvider
 
 
@@ -10,7 +12,8 @@ class LLMFactory:
 
         providers = {
             "hf": HuggingFaceProvider,
-            "local": None
+            "openai": OpenAIProvider,
+            "local": LocalProvider
         }
 
         if provider not in providers:
