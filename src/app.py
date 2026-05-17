@@ -83,12 +83,15 @@ def home():
 @token_validation
 async def ask(query: Query, request:Request):
 
-    print(f"ask is called")
-    question = query.question.strip()
-    answer =await chembot.ask(question=question)
-    return {
-    "answer":answer
-    }
+   print(f"ask is called")
+   question = query.question.strip()
+   if provider.lower() == "local":
+      answer = await chembot.ask_local(question=question, local_provider = True)
+   else:
+      answer = chembot.ask(question=question)
+   return {
+   "answer":answer
+   }
 
 
 @app.post("/quiz")
