@@ -7,15 +7,16 @@ services:
     volumes:
       - ./models:/app/models
       - ./faiss_index:/app/faiss_index
-      - ./hf_cache:/root/.cache/huggingface   # ✅ ADD THIS
+      - ./hf_cache:/root/.cache/huggingface
     environment:
-      # - model_id_local=/app/models/my_local_model
-      # - TRANSFORMERS_CACHE=/root/.cache/huggingface  # ✅ ADD THIS
-      # - USE_LOCAL_MODEL="${USE_LOCAL_MODEL}"
+      - HF_MODEL_ID=${HF_MODEL_ID}
+      - LOCAL_MODEL_ID=${LOCAL_MODEL_ID}
+      - TRANSFORMERS_CACHE=/root/.cache/huggingface  # Save transformers locally
       - HUGGINGFACEHUB_API_TOKEN=${HUGGINGFACEHUB_API_TOKEN}
       - HF_REPO_ID=${HF_REPO_ID}
       - PATH_INDEX=${PATH_INDEX}
       - PATH_PDF=${PATH_PDF}
+      - PROVIDER=${PROVIDER}
     ports:
       - "8000:8000"
     restart: unless-stopped

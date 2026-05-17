@@ -207,7 +207,7 @@ marimo/_lsp/
 __marimo__/
 
 
-
+models/
 faiss_index/
 hf_cache/
 *.pdf
