@@ -1,15 +1,20 @@
 import os
 import torch
+import time
+import asyncio
 from pathlib import Path
 from dotenv import load_dotenv
 from src.llm.providers.base import BaseLLMProvider
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from langchain_core.messages import AIMessage
+from langchain_core.runnables import Runnable
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 
 load_dotenv()
 
 
-class LocalProvider(BaseLLMProvider):
+class LocalProvider(BaseLLMProvider, Runnable):
 
 
     def __init__(self):
@@ -17,7 +22,7 @@ class LocalProvider(BaseLLMProvider):
         hf_model = os.getenv("HF_MODEL_ID")
         local_model_id = os.getenv("LOCAL_MODEL_ID")
         path = Path(local_model_id)
-        if not hf_model and not local_model_id:
+        if not hf_model or not local_model_id:
             raise ValueError(f"Path not found!")
         
         if not path.exists():
@@ -28,7 +33,7 @@ class LocalProvider(BaseLLMProvider):
 
     def get_llm(self):
 
-        return self.llm
+        return self
     
 
     def download_model(self, hf_model:str, local_model_id:str):
@@ -52,27 +57,125 @@ class LocalProvider(BaseLLMProvider):
             local_files_only = True
             )
         return model, tokenizer
-    
 
-    def invoke(self, prompt):
+
+    def build_prompt(self, context:str, question:str, chat_history:list = None):
+
+
+        if chat_history is None:
+            chat_history = []
+
+        chat_prompt = ChatPromptTemplate.from_messages([
+            ("system",
+            """
+        You are ChemBot, an AI chemistry teacher.
+
+        Rules:
+        - Only answer chemistry-related questions.
+        - Use the provided context to answer.
+        - If the answer is not in the context, say:
+            "I don't know based on the provided context."
+        - If not chemistry-related, respond:
+        "I can only answer chemistry-related questions."
+        """),
+
+            MessagesPlaceholder(variable_name="chat_history"),
+
+            ("human",
+            """
+        Context:
+        {context}
+
+        Question:
+        {question}
+        """)
+        ])
+
+        natural_prompt = chat_prompt.invoke({
+            "chat_history": chat_history,
+            "context": context,
+            "question": question
+        })
+
+        messages = natural_prompt.to_messages()
+        formatted_messages = []
+
+        role_map = {
+            "system": "system",
+            "human": "user",
+            "ai": "assistant"
+        }
+
+        for msg in messages:
+            
+            formatted_messages.append(
+                {
+                    "role": role_map[msg.type],
+                    "content": msg.content
+                }
+            )
+
+        prompt = self._tokenizer.apply_chat_template(
+            formatted_messages,
+            tokenize = False,
+            add_generation_prompt = True
+        )
+        print("prompt built successfully")
+        print(f"built prompt: {prompt}")
+        return prompt
+
+
+    async def invoke(self, input, config = None):
+
+        start = time.time()
+        print(f"input in runnable: {input}")
+        messages = input.to_messages()
+        role_map = {
+        "system": "system",
+        "human": "user",
+        "ai": "assistant"
+    }
+        formatted_messages = []
+        for msg in messages:
+
+            role = role_map.get(msg.type)
+
+            if role is None:
+                continue
+
+            formatted_messages.append({
+                "role": role,
+                "content": msg.content
+            })
+
+        prompt = self._tokenizer.apply_chat_template(
+            formatted_messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
+        print(f"built prompt: {prompt}")
 
         token = self._tokenizer(
             prompt,
             return_tensors = "pt",
-            truncate = True,
+            truncation = True,
             max_length = 1800
             ).to(self._model.device)
         
         with torch.no_grad():
 
-            output = self._model.generate(
+            output = await asyncio.to_thread(
+                self._model.generate,
                 **token,
-                max_new_tokens = 1024,
+                max_new_tokens = 128,
                 temperature = 0.2,
                 top_p = 0.9,
+                top_k = 30,
                 do_sample = True
             )
         
         generated_tokens = output[0][token["input_ids"].shape[1]:] # Code to filter
         answer = self._tokenizer.decode(generated_tokens, skip_special_tokens = True)
-        return {"content":answer}
+        total_time = time.time() - start
+        print(f"Total time taken to generate answer: {total_time} seconds")
+        return AIMessage(content = answer)
