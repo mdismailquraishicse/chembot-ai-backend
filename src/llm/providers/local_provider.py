@@ -1,17 +1,20 @@
 import os
 import torch
+import time
+import asyncio
 from pathlib import Path
 from dotenv import load_dotenv
 from src.llm.providers.base import BaseLLMProvider
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from langchain_core.messages import AIMessage
+from langchain_core.runnables import Runnable
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 
 load_dotenv()
 
 
-class LocalProvider(BaseLLMProvider):
+class LocalProvider(BaseLLMProvider, Runnable):
 
 
     def __init__(self):
@@ -122,14 +125,35 @@ class LocalProvider(BaseLLMProvider):
         return prompt
 
 
-    def invoke(self, **kwargs):
+    async def invoke(self, input, config = None):
 
+        start = time.time()
+        print(f"input in runnable: {input}")
+        messages = input.to_messages()
+        role_map = {
+        "system": "system",
+        "human": "user",
+        "ai": "assistant"
+    }
+        formatted_messages = []
+        for msg in messages:
 
-        prompt = self.build_prompt(
-            context = kwargs.get("context"),
-            question = kwargs.get("question"),
-            chat_history = kwargs.get("chat_history")
-            )
+            role = role_map.get(msg.type)
+
+            if role is None:
+                continue
+
+            formatted_messages.append({
+                "role": role,
+                "content": msg.content
+            })
+
+        prompt = self._tokenizer.apply_chat_template(
+            formatted_messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
+        print(f"built prompt: {prompt}")
 
         token = self._tokenizer(
             prompt,
@@ -140,14 +164,18 @@ class LocalProvider(BaseLLMProvider):
         
         with torch.no_grad():
 
-            output = self._model.generate(
+            output = await asyncio.to_thread(
+                self._model.generate,
                 **token,
-                max_new_tokens = 1024,
+                max_new_tokens = 128,
                 temperature = 0.2,
                 top_p = 0.9,
+                top_k = 30,
                 do_sample = True
             )
         
         generated_tokens = output[0][token["input_ids"].shape[1]:] # Code to filter
         answer = self._tokenizer.decode(generated_tokens, skip_special_tokens = True)
+        total_time = time.time() - start
+        print(f"Total time taken to generate answer: {total_time} seconds")
         return AIMessage(content = answer)

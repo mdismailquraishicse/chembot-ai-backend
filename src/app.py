@@ -34,6 +34,7 @@ class Query(BaseModel):
    question:str
 
 provider = os.getenv("PROVIDER", "hf")
+print(f"MODEL PROVIDER: {provider}")
 chembot = ChatBotAI(provider = provider)
 quiz_bot = ChatBotQuizAI(provider = provider)
 user_db = {}
@@ -72,6 +73,7 @@ def login(user:User):
 
 @app.get("/")
 def home():
+
    return {
       "message":"chembot is running..."
    }
@@ -83,7 +85,7 @@ async def ask(query: Query, request:Request):
 
     print(f"ask is called")
     question = query.question.strip()
-    answer = chembot.ask(question=question)
+    answer =await chembot.ask(question=question)
     return {
     "answer":answer
     }

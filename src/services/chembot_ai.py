@@ -98,7 +98,7 @@ class ChatBotAI:
         return context
 
 
-    def ask(self, question:str):
+    async def ask(self, question:str):
 
         """
         Process a user question and generate a chemistry-focused response.
@@ -119,7 +119,7 @@ class ChatBotAI:
         """
 
         context = self.get_context(question=question)
-        response = self.chain.invoke({
+        response = await self.chain.invoke({
             "chat_history": self.chat_history,
             "question": question,
             "context": context
