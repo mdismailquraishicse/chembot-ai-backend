@@ -21,100 +21,27 @@ Purpose:
     "exit quiz", and terminate the application using "exit".
 """
 
-import os
-from src import app
-from fastapi import Request
-from pydantic import BaseModel
-from src.auth.models import User
-from src.services.chembot_ai import ChatBotAI
-from src.services.chembot_quiz import ChatBotQuizAI
-from src.auth.utils import verify_password, generate_token, encrypt_password, token_validation
-
-class Query(BaseModel):
-   question:str
-
-provider = os.getenv("PROVIDER", "hf")
-print(f"MODEL PROVIDER: {provider}")
-chembot = ChatBotAI(provider = provider)
-quiz_bot = ChatBotQuizAI(provider = provider)
-user_db = {}
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from src.api.router import api_router as v1_router
 
 
-@app.post("/register")
-def register(user:User):
-   """
-   1. generate hashed password
-   2. store creds in db
-   """
-   password = user.password
-   password_hash = encrypt_password(password=password)
-   user.password = password_hash
-   user_db[user.email] = user.model_dump()
-   print(f"registered user: {user_db}")
-   return True
+app = FastAPI()
 
-@app.post("/login")
-def login(user:User):
-   """
-      1. Fetch hashed password from db for the given username
-      2. compare hashed and plain password using bcrypt
-   """
-   # fetch plain password from db
-   print(f"user:{user}")
-   print(f"user db : {user_db}")
-   hash_pw = user_db.get(user.email).get("password")
-   print(f"user: {user}")
-   if not verify_password(hash_pw=hash_pw ,password=user.password):
-      print(f"Invalid credentials")
-      return
-   token = generate_token(payload=user.model_dump())
-   return token
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")
 def home():
 
    return {
-      "message":"chembot is running..."
+      "message":"backend is running..."
    }
 
-
-@app.post("/ask")
-@token_validation
-async def ask(query: Query, request:Request):
-
-   print(f"ask is called")
-   question = query.question.strip()
-   if provider.lower() == "local":
-      answer = await chembot.ask_local(question=question, local_provider = True)
-   else:
-      answer = chembot.ask(question=question)
-   return {
-   "answer":answer
-   }
-
-
-@app.post("/quiz")
-@token_validation
-async def quiz(request:Request):
-
-    quiz_que, options, quiz_answer = quiz_bot.invoke()
-    print(f"response: {quiz_que}")
-    print(f"answer: {quiz_answer}")
-    return {"quiz":quiz_que,
-           "answer": quiz_answer,
-           "options":options
-           }
-
-
-@app.get("/quiz/{answer}")
-@token_validation
-def quiz_answer(answer:int, request:Request):
-
-    if answer==1:
-        print("the answer is correct")
-        return {"result": "Correct"}
-    else:
-        print("the answer is incorrect")
-        return {"result": "Incorrect"}
-
+app.include_router(v1_router, prefix="/api/v1")
